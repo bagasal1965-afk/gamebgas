@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Block Blast - bgas Game Teka-Teki Blok Modern</title>
+    <!-- Tailwind CSS for utility styles -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-main: #0b0f19;
+            --bg-card: #151c2e;
+            --board-bg: #1e293b;
+            --cell-empty: #0f172a;
+            --cell-border: rgba(255, 255, 255, 0.05);
+            --accent-glow: rgba(99, 102, 241, 0.2);
+            --font-game: 'Fredoka', cursive, sans-serif;
+            --font-ui: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: manipulation;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            color: #ffffff;
+            font-family: var(--font-ui);
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .game-header {
+            font-family: var(--font-game);
+        }
+
+        .board-container {
+            position: relative;
+            background: var(--board-bg);
+            border: 3px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 30px var(--accent-glow);
+            border-radius: 20px;
+            padding: 8px;
+            width: min(92vw, 420px);
+            height: min(92vw, 420px);
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            gap: 5px;
+        }
+
+        .cell {
+            background-color: var(--cell-empty);
+            border-radius: 8px;
+            transition: background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+            position: relative;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+        }
+
+        .cell.preview {
+            opacity: 0.6;
+            transform: scale(0.95);
+            box-shadow: 0 0 12px currentColor;
+        }
+
+        .cell.filled {
+            box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.3), 0 4px 10px rgba(0,0,0,0.3);
+            animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .tray-container {
+            width: min(92vw, 420px);
+            height: 130px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 10px;
+            margin-top: 16px;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .shape-slot {
+            width: 100px;
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: grab;
+            transition: transform 0.2s ease;
+        }
+
+        .shape-slot:hover {
+            transform: scale(1.05);
+        }
+
+        .shape-slot.selected {
+            filter: drop-shadow(0 0 12px #3b82f6);
+            transform: scale(1.1);
+        }
+
+        .shape-grid {
+            display: grid;
+            gap: 3px;
+        }
+
+        .block-unit {
+            width: 20px;
+            height: 20px;
+            border-radius: 5px;
+            box-shadow: inset 0 1px 3px rgba(255,255,255,0.3), 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        /* Drag Ghost element */
+        #drag-ghost {
+            position: fixed;
+            pointer-events: none;
+            z-index: 999;
+            display: none;
+            transform: translate(-50%, -50%) scale(1.1);
+            filter: drop-shadow(0 15px 25px rgba(0,0,0,0.5));
+            transition: transform 0.05s ease-out;
+        }
+
+        #drag-ghost .block-unit {
+            width: min(calc((92vw - 50px) / 8), 48px);
+            height: min(calc((92vw - 50px) / 8), 48px);
+            border-radius: 8px;
+        }
+
+        #particle-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes clearFlash {
+            0% { transform: scale(1); filter: brightness(2); }
+            50% { transform: scale(1.15); filter: brightness(3); }
+            100% { transform: scale(0); opacity: 0; }
+        }
+
+        .cell.clearing {
+            animation: clearFlash 0.3s forwards ease-out;
+        }
+
+        .combo-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.5);
+            font-family: var(--font-game);
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #ff007f, #ffaa00, #00f0ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            pointer-events: none;
+            z-index: 20;
+            animation: comboPopup 0.9s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+            text-shadow: 0 10px 20px rgba(0,0,0,0.8);
+        }
+
+        @keyframes comboPopup {
+            0% { transform: translate(-50%, -50%) scale(0.3) rotate(-10deg); opacity: 0; }
+            30% { transform: translate(-50%, -50%) scale(1.2) rotate(5deg); opacity: 1; }
+            70% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
+            100% { transform: translate(-50%, -80%) scale(0.8); opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Floating Combo Popup Container -->
+    <div id="combo-container" class="absolute inset-0 pointer-events-none z-30"></div>
+
+    <!-- Drag Ghost Container -->
+    <div id="drag-ghost"></div>
+
+    <!-- Main Container -->
+    <div class="flex flex-col items-center justify-center w-full max-w-md px-3">
+        
+        <!-- Header & Scores -->
+        <div class="game-header w-full flex justify-between items-center mb-4 px-1">
+            <div class="flex items-center space-x-2">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                </div>
+                <h1 class="text-2xl font-bold tracking-wide bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                    BLOCK Bgas blast
+                </h1>
+            </div>
+
+            <!-- Score Boxes -->
+            <div class="flex space-x-2">
+                <div class="bg-slate-800/80 border border-slate-700/60 px-3 py-1.5 rounded-xl text-center shadow-inner">
+                    <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Skor</p>
+                    <p id="score-text" class="text-lg font-extrabold text-amber-400">0</p>
+                </div>
+                <div class="bg-slate-800/80 border border-slate-700/60 px-3 py-1.5 rounded-xl text-center shadow-inner">
+                    <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tertinggi</p>
+                    <p id="high-score-text" class="text-lg font-extrabold text-purple-400">0</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Board Wrapper -->
+        <div class="relative">
+            <div id="board" class="board-container"></div>
+            <canvas id="particle-canvas"></canvas>
+        </div>
+
+        <!-- Shapes Tray -->
+        <div id="tray" class="tray-container"></div>
+
+        <!-- Instructions / Hint -->
+        <p class="text-xs text-slate-500 mt-3 font-medium text-center">
+            carane ya geser blok e maring duwur ben pas sesuai okeee porra 
+            semangat ohhh!
+        </p>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="game-over-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="bg-slate-900 border border-slate-700/80 p-6 rounded-3xl text-center max-w-xs w-full shadow-2xl transform scale-90 transition-transform duration-300 id-modal-box">
+            <div class="w-16 h-16 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-center justify-center mx-auto mb-3 text-red-400">
+                <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            </div>
+            <h2 class="text-3xl font-extrabold text-white mb-1 font-['Fredoka']">PermainanANE RAMPUNG YA!</h2>
+            <p class="text-slate-400 text-xs mb-4">LAKA posisi tersisa untuk blok yang ada.</p>
+
+            <div class="bg-slate-800/60 rounded-2xl p-4 mb-5 border border-slate-700/50 space-y-2">
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-slate-400">Skor AKHIR</span>
+                    <span id="modal-score" class="font-bold text-amber-400 text-xl">0</span>
+                </div>
+                <div class="flex justify-between items-center text-sm pt-2 border-t border-slate-700/50">
+                    <span class="text-slate-400">SkorE KOEN Tertinggi</span>
+                    <span id="modal-high-score" class="font-bold text-purple-400 text-xl">0</span>
+                </div>
+            </div>
+
+            <button id="btn-restart" class="w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:opacity-90 active:scale-95 text-white font-extrabold py-3.5 px-6 rounded-2xl shadow-lg shadow-indigo-500/30 transition-all font-['Fredoka'] text-lg">
+                Main MANEH OWHH 🔄
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Web Audio Synthesizer for rich sound effects without external assets
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSound(type, combo = 1) {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+
+            if (type === 'place') {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(320, now);
+                osc.frequency.exponentialRampToValueAtTime(120, now + 0.08);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(now); osc.stop(now + 0.08);
+            } 
+            else if (type === 'clear') {
+                const baseFreq = 350 + (combo * 80);
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(baseFreq, now);
+                osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.8, now + 0.22);
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(now); osc.stop(now + 0.22);
+            } 
+            else if (type === 'gameover') {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(220, now);
+                osc.frequency.linearRampToValueAtTime(70, now + 0.5);
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(now); osc.stop(now + 0.5);
+            }
+        }
+
+        const BOARD_SIZE = 8;
+        let boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+        let score = 0;
+        let highScore = parseInt(localStorage.getItem('blockblast_highscore') || '0', 10);
+        let currentTrayShapes = [null, null, null];
+        let streakCount = 0;
+
+        // Shape Templates with distinct colors
+        const SHAPES = [
+            // Single Dot
+            { matrix: [[1]], color: '#ef4444' }, // Red
+            // 2-Line Horizontal & Vertical
+            { matrix: [[1, 1]], color: '#f97316' }, // Orange
+            { matrix: [[1], [1]], color: '#f97316' },
+            // 3-Line Horizontal & Vertical
+            { matrix: [[1, 1, 1]], color: '#eab308' }, // Yellow
+            { matrix: [[1], [1], [1]], color: '#eab308' },
+            // 4-Line Horizontal & Vertical
+            { matrix: [[1, 1, 1, 1]], color: '#10b981' }, // Emerald
+            { matrix: [[1], [1], [1], [1]], color: '#10b981' },
+            // 2x2 Square
+            { matrix: [[1, 1], [1, 1]], color: '#06b6d4' }, // Cyan
+            // 3x3 Square
+            { matrix: [[1, 1, 1], [1, 1, 1], [1, 1, 1]], color: '#3b82f6' }, // Blue
+            // L Shapes Small
+            { matrix: [[1, 0], [1, 1]], color: '#8b5cf6' }, // Purple
+            { matrix: [[0, 1], [1, 1]], color: '#8b5cf6' },
+            { matrix: [[1, 1], [1, 0]], color: '#8b5cf6' },
+            { matrix: [[1, 1], [0, 1]], color: '#8b5cf6' },
+            // L Shapes Big
+            { matrix: [[1, 0, 0], [1, 0, 0], [1, 1, 1]], color: '#ec4899' }, // Pink
+            { matrix: [[0, 0, 1], [0, 0, 1], [1, 1, 1]], color: '#ec4899' },
+            { matrix: [[1, 1, 1], [1, 0, 0], [1, 0, 0]], color: '#ec4899' },
+            { matrix: [[1, 1, 1], [0, 0, 1], [0, 0, 1]], color: '#ec4899' },
+            // T Shapes
+            { matrix: [[1, 1, 1], [0, 1, 0]], color: '#f43f5e' }, // Rose
+            { matrix: [[0, 1, 0], [1, 1, 1]], color: '#f43f5e' },
+            { matrix: [[1, 0], [1, 1], [1, 0]], color: '#f43f5e' },
+            { matrix: [[0, 1], [1, 1], [0, 1]], color: '#f43f5e' }
+        ];
+
+        const boardEl = document.getElementById('board');
+        const trayEl = document.getElementById('tray');
+        const scoreEl = document.getElementById('score-text');
+        const highScoreEl = document.getElementById('high-score-text');
+        const ghostEl = document.getElementById('drag-ghost');
+        const comboContainer = document.getElementById('combo-container');
+        const canvas = document.getElementById('particle-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let activeDrag = null; // { shapeIndex, shape, element, offsetX, offsetY }
+        let selectedTrayIndex = null; // For tap-to-place support
+        let particles = [];
+
+        function resizeCanvas() {
+            const rect = boardEl.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function initGame() {
+            highScoreEl.innerText = highScore;
+            scoreEl.innerText = score;
+            
+            // Generate board cells
+            boardEl.innerHTML = '';
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    
+                    // Click listener for tap-to-place fallback
+                    cell.addEventListener('click', () => handleCellClick(r, c));
+                    boardEl.appendChild(cell);
+                }
+            }
+
+            resizeCanvas();
+            refillTray();
+            requestAnimationFrame(particleLoop);
+        }
+
+        function createShapeDOM(shape, isGhost = false) {
+            const shapeGrid = document.createElement('div');
+            shapeGrid.className = 'shape-grid';
+            shapeGrid.style.gridTemplateColumns = `repeat(${shape.matrix[0].length}, 1fr)`;
+
+            for (let r = 0; r < shape.matrix.length; r++) {
+                for (let c = 0; c < shape.matrix[r].length; c++) {
+                    const block = document.createElement('div');
+                    block.className = 'block-unit';
+                    if (shape.matrix[r][c]) {
+                        block.style.backgroundColor = shape.color;
+                    } else {
+                        block.style.visibility = 'hidden';
+                    }
+                    shapeGrid.appendChild(block);
+                }
+            }
+            return shapeGrid;
+        }
+
+        function refillTray() {
+            trayEl.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                const randomShape = { ...SHAPES[Math.floor(Math.random() * SHAPES.length)] };
+                currentTrayShapes[i] = randomShape;
+
+                const slot = document.createElement('div');
+                slot.className = 'shape-slot';
+                slot.dataset.index = i;
+
+                const shapeDOM = createShapeDOM(randomShape);
+                slot.appendChild(shapeDOM);
+
+                // Pointer events for drag & drop
+                slot.addEventListener('pointerdown', (e) => startDragging(e, i));
+                
+                trayEl.appendChild(slot);
+            }
+            checkGameOver();
+        }
+
+        function startDragging(e, index) {
+            initAudio();
+            const shape = currentTrayShapes[index];
+            if (!shape) return;
+
+            // Handle selection for tap-to-place
+            if (selectedTrayIndex === index) {
+                clearSelection();
+            } else {
+                selectTrayShape(index);
+            }
+
+            const slotEl = trayEl.children[index];
+            const rect = slotEl.getBoundingClientRect();
+
+            activeDrag = {
+                shapeIndex: index,
+                shape: shape,
+                element: slotEl,
+                width: rect.width,
+                height: rect.height
+            };
+
+            // Setup Ghost Element
+            ghostEl.innerHTML = '';
+            ghostEl.appendChild(createShapeDOM(shape, true));
+            ghostEl.style.display = 'block';
+
+            updateGhostPosition(e.clientX, e.clientY);
+
+            document.addEventListener('pointermove', onPointerMove);
+            document.addEventListener('pointerup', onPointerUp);
+        }
+
+        function selectTrayShape(index) {
+            clearSelection();
+            selectedTrayIndex = index;
+            if (trayEl.children[index]) {
+                trayEl.children[index].classList.add('selected');
+            }
+        }
+
+        function clearSelection() {
+            selectedTrayIndex = null;
+            Array.from(trayEl.children).forEach(slot => slot.classList.remove('selected'));
+        }
+
+        function updateGhostPosition(clientX, clientY) {
+            if (!activeDrag) return;
+            // Place ghost slightly above finger on touch screens
+            const touchOffset = ('ontouchstart' in window) ? 70 : 0;
+            ghostEl.style.left = `${clientX}px`;
+            ghostEl.style.top = `${clientY - touchOffset}px`;
+
+            // Highlight preview on board
+            updateBoardPreview(clientX, clientY - touchOffset);
+        }
+
+        function onPointerMove(e) {
+            if (!activeDrag) return;
+            updateGhostPosition(e.clientX, e.clientY);
+        }
+
+        function getBoardCellFromCoords(clientX, clientY) {
+            const rect = boardEl.getBoundingClientRect();
+            if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+                return null;
+            }
+
+            const cellSize = rect.width / BOARD_SIZE;
+            const col = Math.floor((clientX - rect.left) / cellSize);
+            const row = Math.floor((clientY - rect.top) / cellSize);
+
+            if (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE) {
+                return { row, col };
+            }
+            return null;
+        }
+
+        function updateBoardPreview(clientX, clientY) {
+            clearPreviews();
+            const target = getBoardCellFromCoords(clientX, clientY);
+            if (!target || !activeDrag) return;
+
+            if (canPlaceShape(activeDrag.shape, target.row, target.col)) {
+                highlightPreview(activeDrag.shape, target.row, target.col);
+            }
+        }
+
+        function clearPreviews() {
+            const cells = boardEl.children;
+            for (let i = 0; i < cells.length; i++) {
+                cells[i].classList.remove('preview');
+                if (!cells[i].classList.contains('filled')) {
+                    cells[i].style.backgroundColor = '';
+                }
+            }
+        }
+
+        function highlightPreview(shape, startRow, startCol) {
+            for (let r = 0; r < shape.matrix.length; r++) {
+                for (let c = 0; c < shape.matrix[r].length; c++) {
+                    if (shape.matrix[r][c]) {
+                        const cell = getCellDOM(startRow + r, startCol + c);
+                        if (cell) {
+                            cell.classList.add('preview');
+                            cell.style.backgroundColor = shape.color;
+                        }
+                    }
+                }
+            }
+        }
+
+        function canPlaceShape(shape, startRow, startCol) {
+            for (let r = 0; r < shape.matrix.length; r++) {
+                for (let c = 0; c < shape.matrix[r].length; c++) {
+                    if (shape.matrix[r][c]) {
+                        const targetR = startRow + r;
+                        const targetC = startCol + c;
+
+                        if (targetR < 0 || targetR >= BOARD_SIZE || targetC < 0 || targetC >= BOARD_SIZE) {
+                            return false; // Out of bounds
+                        }
+                        if (boardState[targetR][targetC] !== null) {
+                            return false; // Cell occupied
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
+        function onPointerUp(e) {
+            document.removeEventListener('pointermove', onPointerMove);
+            document.removeEventListener('pointerup', onPointerUp);
+
+            if (!activeDrag) return;
+
+            const touchOffset = ('ontouchstart' in window) ? 70 : 0;
+            const target = getBoardCellFromCoords(e.clientX, e.clientY - touchOffset);
+
+            ghostEl.style.display = 'none';
+            clearPreviews();
+
+            if (target && canPlaceShape(activeDrag.shape, target.row, target.col)) {
+                placeShape(activeDrag.shapeIndex, target.row, target.col);
+            }
+
+            activeDrag = null;
+        }
+
+        function handleCellClick(row, col) {
+            if (selectedTrayIndex !== null && currentTrayShapes[selectedTrayIndex]) {
+                const shape = currentTrayShapes[selectedTrayIndex];
+                if (canPlaceShape(shape, row, col)) {
+                    placeShape(selectedTrayIndex, row, col);
+                    clearSelection();
+                }
+            }
+        }
+
+        function placeShape(trayIndex, startRow, startCol) {
+            const shape = currentTrayShapes[trayIndex];
+            let blocksPlaced = 0;
+
+            for (let r = 0; r < shape.matrix.length; r++) {
+                for (let c = 0; c < shape.matrix[r].length; c++) {
+                    if (shape.matrix[r][c]) {
+                        const tr = startRow + r;
+                        const tc = startCol + c;
+                        boardState[tr][tc] = shape.color;
+                        
+                        const cell = getCellDOM(tr, tc);
+                        cell.classList.add('filled');
+                        cell.style.backgroundColor = shape.color;
+                        blocksPlaced++;
+                    }
+                }
+            }
+
+            playSound('place');
+            addScore(blocksPlaced * 10);
+
+            // Remove shape from tray
+            currentTrayShapes[trayIndex] = null;
+            trayEl.children[trayIndex].innerHTML = '';
+
+            // Process Line Clear & Combo
+            checkAndClearLines();
+
+            // Check if all tray items used
+            if (currentTrayShapes.every(s => s === null)) {
+                setTimeout(refillTray, 200);
+            } else {
+                checkGameOver();
+            }
+        }
+
+        function getCellDOM(row, col) {
+            return boardEl.children[row * BOARD_SIZE + col];
+        }
+
+        function checkAndClearLines() {
+            let fullRows = [];
+            let fullCols = [];
+
+            // Check Rows
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                if (boardState[r].every(cell => cell !== null)) {
+                    fullRows.push(r);
+                }
+            }
+
+            // Check Cols
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                let isFull = true;
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    if (boardState[r][c] === null) {
+                        isFull = false;
+                        break;
+                    }
+                }
+                if (isFull) fullCols.push(c);
+            }
+
+            const linesCleared = fullRows.length + fullCols.length;
+
+            if (linesCleared > 0) {
+                streakCount++;
+                const comboMultiplier = linesCleared + (streakCount > 1 ? streakCount : 0);
+
+                // Collect cells to clear
+                const cellsToClear = new Set();
+                fullRows.forEach(r => {
+                    for (let c = 0; c < BOARD_SIZE; c++) cellsToClear.add(`${r},${c}`);
+                });
+                fullCols.forEach(c => {
+                    for (let r = 0; r < BOARD_SIZE; r++) cellsToClear.add(`${r},${c}`);
+                });
+
+                // Spawn particles & animate clearing
+                cellsToClear.forEach(coord => {
+                    const [r, c] = coord.split(',').map(Number);
+                    const cellDOM = getCellDOM(r, c);
+                    cellDOM.classList.add('clearing');
+
+                    const rect = cellDOM.getBoundingClientRect();
+                    const boardRect = boardEl.getBoundingClientRect();
+                    spawnParticles(
+                        rect.left - boardRect.left + rect.width / 2,
+                        rect.top - boardRect.top + rect.height / 2,
+                        boardState[r][c]
+                    );
+                });
+
+                playSound('clear', comboMultiplier);
+
+                // Calculate bonus score
+                const baseClearScore = linesCleared * 100;
+                const bonusScore = baseClearScore * comboMultiplier;
+                addScore(bonusScore);
+
+                // Display Combo Popup
+                showComboText(comboMultiplier);
+
+                setTimeout(() => {
+                    cellsToClear.forEach(coord => {
+                        const [r, c] = coord.split(',').map(Number);
+                        boardState[r][c] = null;
+                        const cellDOM = getCellDOM(r, c);
+                        cellDOM.className = 'cell';
+                        cellDOM.style.backgroundColor = '';
+                    });
+                    checkGameOver();
+                }, 280);
+
+            } else {
+                streakCount = 0; // Reset streak if no lines cleared
+            }
+        }
+
+        function showComboText(combo) {
+            const textEl = document.createElement('div');
+            textEl.className = 'combo-text';
+            if (combo >= 4) {
+                textEl.innerText = `LUAAR BIASA! x${combo}`;
+            } else if (combo >= 2) {
+                textEl.innerText = `KOMBO x${combo}!`;
+            } else {
+                textEl.innerText = `BAGUS!`;
+            }
+            comboContainer.appendChild(textEl);
+
+            setTimeout(() => {
+                textEl.remove();
+            }, 900);
+        }
+
+        function spawnParticles(x, y, color) {
+            for (let i = 0; i < 8; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 8,
+                    size: Math.random() * 6 + 4,
+                    color: color,
+                    alpha: 1
+                });
+            }
+        }
+
+        function particleLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.alpha -= 0.03;
+
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, p.alpha);
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                if (p.alpha <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+            requestAnimationFrame(particleLoop);
+        }
+
+        function addScore(points) {
+            score += points;
+            scoreEl.innerText = score;
+
+            if (score > highScore) {
+                highScore = score;
+                highScoreEl.innerText = highScore;
+                localStorage.setItem('blockblast_highscore', highScore);
+            }
+        }
+
+        function checkGameOver() {
+            let possiblePlacement = false;
+
+            for (let i = 0; i < currentTrayShapes.length; i++) {
+                const shape = currentTrayShapes[i];
+                if (!shape) continue;
+
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (canPlaceShape(shape, r, c)) {
+                            possiblePlacement = true;
+                            break;
+                        }
+                    }
+                    if (possiblePlacement) break;
+                }
+                if (possiblePlacement) break;
+            }
+
+            // Trigger Game Over Modal
+            if (!possiblePlacement && currentTrayShapes.some(s => s !== null)) {
+                playSound('gameover');
+                setTimeout(triggerGameOver, 400);
+            }
+        }
+
+        function triggerGameOver() {
+            document.getElementById('modal-score').innerText = score;
+            document.getElementById('modal-high-score').innerText = highScore;
+
+            const modal = document.getElementById('game-over-modal');
+            const box = modal.querySelector('.id-modal-box');
+
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            box.classList.remove('scale-90');
+            box.classList.add('scale-100');
+        }
+
+        function restartGame() {
+            boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+            score = 0;
+            streakCount = 0;
+            scoreEl.innerText = '0';
+
+            const modal = document.getElementById('game-over-modal');
+            const box = modal.querySelector('.id-modal-box');
+
+            box.classList.remove('scale-100');
+            box.classList.add('scale-90');
+            modal.classList.add('opacity-0', 'pointer-events-none');
+
+            initGame();
+        }
+
+        // Attach Restart Event
+        document.getElementById('btn-restart').addEventListener('click', restartGame);
+
+        // Start game on load
+        window.onload = initGame;
+    </script>
+</body>
+</html>
